@@ -2345,7 +2345,7 @@ export default function HomePage() {
               <CardContent className="pt-6">
                 <div className="flex flex-wrap gap-3">
                   <a
-                    href={`${process.env.NODE_ENV === "production" ? "/cybiasbench" : ""}/data/analysis_results.json`}
+                    href={`${process.env.NODE_ENV === "production" ? "/CyBiasBench" : ""}/data/analysis_results.json`}
                     download="analysis_results.json"
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
