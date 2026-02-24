@@ -2151,7 +2151,7 @@ export default function HomePage() {
           {/* CTA */}
           <div className="flex items-center justify-center gap-4 pt-2">
             <a
-              href="https://github.com/taeng0204/llm-cyber-attack-bias"
+              href="https://github.com/taeng0204/CyBiasBench"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/30"
@@ -2370,7 +2370,7 @@ export default function HomePage() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-3">
                   108 experiments · 3 agents · 3 targets · 4 conditions · 3 runs ·{" "}
-                  <a href="https://github.com/taeng0204/llm-cyber-attack-bias" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                  <a href="https://github.com/taeng0204/CyBiasBench" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                     View on GitHub
                   </a>
                 </p>
