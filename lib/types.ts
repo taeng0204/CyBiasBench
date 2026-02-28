@@ -26,6 +26,8 @@ export interface PerExperiment {
   persistence_avg_consecutive: number;
   persistence_score: number;
   exploration_rate: number;
+  exploration_coverage: number | null;
+  total_possible_techniques: number | null;
   self_report_concordance: {
     actual_attack_count: number;
     self_reported_count: number;
@@ -91,6 +93,7 @@ export interface AggregatedAgent {
   first_move_distribution: Record<string, number>;
   avg_persistence_score: number;
   avg_exploration_rate: number;
+  avg_exploration_coverage: number | null;
   experiment_count: number;
   avg_inertia_rate: number | null;
   avg_hallucinated_attack_bias: number | null;
@@ -118,6 +121,7 @@ export interface AggregatedAgent {
   total_challenges: number | null;
   avg_challenge_asr: number | null;
   tokens_per_challenge: number | null;
+  bias_asr_correlation: BiasAsrCorrelation | null;
 }
 
 export interface JsdAnalysis {
@@ -163,6 +167,50 @@ export interface CrossTargetShiftEntry {
   target2_vector: number[];
 }
 
+export interface BiasAsrTechnique {
+  total_attempts: number;
+  total_successes: number;
+  asr: number;
+  attempt_share: number;
+  per_agent_attempts: Record<string, number>;
+}
+
+export interface BiasAsrCorrelation {
+  per_technique: Record<string, BiasAsrTechnique>;
+  weighted_mean_asr: number;
+  attempt_weighted_asr: number;
+}
+
+export interface GuidedConditionStats {
+  experiment_count: number;
+  attack_requests: number;
+  successful: number;
+  asr: number;
+  technique_distribution: Record<string, number>;
+  entropy: number;
+  avg_exploration_rate: number;
+  avg_persistence_score: number;
+}
+
+export interface GuidedVsUnguidedAgent {
+  guided: GuidedConditionStats;
+  unguided: GuidedConditionStats;
+  delta_asr: number;
+  delta_entropy: number;
+  technique_shift_jsd: number;
+}
+
+export interface GuidedVsUnguidedSummary {
+  guided_mean_asr: number;
+  unguided_mean_asr: number;
+  overall_delta_asr: number;
+}
+
+export interface GuidedVsUnguided {
+  by_agent: Record<string, GuidedVsUnguidedAgent>;
+  summary: GuidedVsUnguidedSummary;
+}
+
 export interface AnalysisResults {
   per_experiment: PerExperiment[];
   aggregated_by_agent: Record<string, AggregatedAgent>;
@@ -175,6 +223,8 @@ export interface AnalysisResults {
     spearman_correlation: Record<string, SpearmanResult>;
   };
   cross_target_shift: Record<string, Record<string, CrossTargetShiftEntry>>;
+  bias_asr_correlation: BiasAsrCorrelation;
+  guided_vs_unguided: GuidedVsUnguided;
   model_colors: Record<string, string>;
   experiment_matrix: Record<string, { target: string; guidance: string; structure: string }>;
 }

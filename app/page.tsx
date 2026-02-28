@@ -13,7 +13,7 @@ import {
   Cell,
 } from "recharts";
 import { loadAnalysisData } from "@/lib/data";
-import type { AnalysisResults, AggregatedAgent, PerExperiment } from "@/lib/types";
+import type { AnalysisResults, AggregatedAgent, PerExperiment, GuidedVsUnguidedAgent } from "@/lib/types";
 import { AGENTS, AGENT_LABELS, AGENT_MODELS, MODEL_COLORS, TARGET_LABELS } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -786,7 +786,11 @@ function TechniqueBiasContent({ data }: { data: AnalysisResults }) {
   AGENTS.forEach((a) => {
     Object.keys(agg[a]?.technique_distribution ?? {}).forEach((t) => allTechs.add(t));
   });
-  const techniques = [...allTechs].sort();
+  const techniques = [...allTechs].sort((a, b) => {
+    const sumA = AGENTS.reduce((s, ag) => s + (agg[ag]?.technique_distribution?.[a] ?? 0), 0);
+    const sumB = AGENTS.reduce((s, ag) => s + (agg[ag]?.technique_distribution?.[b] ?? 0), 0);
+    return sumB - sumA;
+  });
 
   const heatmapValues: Record<string, Record<string, number>> = {};
   for (const a of AGENTS) {
@@ -815,7 +819,11 @@ function TechniqueBiasContent({ data }: { data: AnalysisResults }) {
   AGENTS.forEach((a) => {
     Object.keys(agg[a]?.first_move_distribution ?? {}).forEach((m) => allFirstMoves.add(m));
   });
-  const firstMoves = [...allFirstMoves].sort();
+  const firstMoves = [...allFirstMoves].sort((a, b) => {
+    const sumA = AGENTS.reduce((s, ag) => s + (agg[ag]?.first_move_distribution?.[a] ?? 0), 0);
+    const sumB = AGENTS.reduce((s, ag) => s + (agg[ag]?.first_move_distribution?.[b] ?? 0), 0);
+    return sumB - sumA;
+  });
   const firstMoveData = firstMoves.map((move) => {
     const row: Record<string, string | number> = { name: move };
     for (const a of AGENTS) {
@@ -963,7 +971,11 @@ function AttackSuccessContent({ data }: { data: AnalysisResults }) {
   AGENTS.forEach((a) => {
     Object.keys(agg[a]?.per_technique_asr ?? {}).forEach((t) => allTechs.add(t));
   });
-  const techniques = [...allTechs].sort();
+  const techniques = [...allTechs].sort((a, b) => {
+    const sumA = AGENTS.reduce((s, ag) => s + (agg[ag]?.per_technique_asr?.[a]?.attempted ?? 0), 0);
+    const sumB = AGENTS.reduce((s, ag) => s + (agg[ag]?.per_technique_asr?.[b]?.attempted ?? 0), 0);
+    return sumB - sumA;
+  });
 
   const asrData = techniques.map((tech) => {
     const row: Record<string, string | number> = { name: tech };
@@ -1467,6 +1479,20 @@ function AttackSuccessContent({ data }: { data: AnalysisResults }) {
 function BehavioralContent({ data }: { data: AnalysisResults }) {
   const agg = data.aggregated_by_agent;
 
+  // Compute avg exploration coverage from per_experiment (not in aggregated data)
+  const avgExplorationCoverage = useMemo(() => {
+    const sums: Record<string, { total: number; count: number }> = {};
+    for (const exp of data.per_experiment) {
+      if (exp.exploration_coverage == null) continue;
+      if (!sums[exp.agent]) sums[exp.agent] = { total: 0, count: 0 };
+      sums[exp.agent].total += exp.exploration_coverage;
+      sums[exp.agent].count += 1;
+    }
+    return Object.fromEntries(
+      AGENTS.map((a) => [a, sums[a] && sums[a].count > 0 ? sums[a].total / sums[a].count : null])
+    ) as Record<string, number | null>;
+  }, [data.per_experiment]);
+
   // Radar chart data -- normalize all axes to [0,1]
   const rawPersistence = AGENTS.map((a) => agg[a]?.avg_persistence_score ?? 0);
   const rawExploration = AGENTS.map((a) => agg[a]?.avg_exploration_rate ?? 0);
@@ -1560,6 +1586,29 @@ function BehavioralContent({ data }: { data: AnalysisResults }) {
                 <YAxis tickFormatter={pctFormatter0} tick={DARK_TICK} domain={[0, 1]} />
                 <RTooltip formatter={pctFormatter} contentStyle={DARK_TOOLTIP} />
                 <Bar dataKey="value" name="Exploration Rate" radius={[4, 4, 0, 0]}>
+                  {AGENTS.map((a) => <Cell key={a} fill={MODEL_COLORS[a]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Exploration Coverage</CardTitle>
+            <CardDescription>Unique techniques used / total possible techniques for the target (higher = broader coverage)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart
+                data={AGENTS.map((a) => ({ name: AGENT_LABELS[a], value: avgExplorationCoverage[a] ?? 0 }))}
+                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={DARK_GRID} />
+                <XAxis dataKey="name" tick={DARK_TICK} />
+                <YAxis tick={DARK_TICK} />
+                <RTooltip formatter={numFormatter2} contentStyle={DARK_TOOLTIP} />
+                <Bar dataKey="value" name="Exploration Coverage" radius={[4, 4, 0, 0]}>
                   {AGENTS.map((a) => <Cell key={a} fill={MODEL_COLORS[a]} />)}
                 </Bar>
               </BarChart>
@@ -1834,7 +1883,11 @@ function CrossTargetContent({ data }: { data: AnalysisResults }) {
             if (count > 0) targetTechs.add(tech);
           });
         });
-        const filteredTechs = [...targetTechs].sort();
+        const filteredTechs = [...targetTechs].sort((a, b) => {
+          const sumA = AGENTS.reduce((s, ag) => s + (byTarget[target]?.[ag]?.technique_distribution?.[a] ?? 0), 0);
+          const sumB = AGENTS.reduce((s, ag) => s + (byTarget[target]?.[ag]?.technique_distribution?.[b] ?? 0), 0);
+          return sumB - sumA;
+        });
 
         const heatmapValues: Record<string, Record<string, number>> = {};
         for (const a of AGENTS) {
@@ -2272,6 +2325,124 @@ export default function HomePage() {
           </section>
         )}
 
+        {/* -- Bias-ASR Correlation ───────────────────────────────────────────── */}
+        {data != null && data.bias_asr_correlation && (
+          <section id="bias-asr" className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold text-foreground">Bias-ASR Correlation</h2>
+              <p className="text-muted-foreground text-sm">
+                Per-technique attack volume, success rates, and attempt share. Compares simple mean vs attempt-weighted ASR.
+              </p>
+            </div>
+            <InView>
+              <div className="space-y-6">
+                {/* Summary cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className="font-mono text-2xl font-bold text-foreground">
+                      {fmtPct(data.bias_asr_correlation.weighted_mean_asr)}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Weighted Mean ASR</span>
+                  </div>
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className="font-mono text-2xl font-bold text-foreground">
+                      {fmtPct(data.bias_asr_correlation.attempt_weighted_asr)}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Attempt-Weighted ASR</span>
+                  </div>
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className="font-mono text-2xl font-bold text-foreground">
+                      {Object.keys(data.bias_asr_correlation.per_technique).length}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Techniques Tracked</span>
+                  </div>
+                </div>
+
+                {/* Per-agent weighted vs attempt-weighted */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Per-Agent ASR Comparison</CardTitle>
+                    <CardDescription>Weighted mean ASR vs attempt-weighted ASR per agent</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {AGENTS.map((a) => {
+                        const bac = data.aggregated_by_agent[a]?.bias_asr_correlation;
+                        if (!bac) return null;
+                        return (
+                          <div key={a} className="rounded-lg border p-4" style={{ borderColor: `${MODEL_COLORS[a]}40` }}>
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: MODEL_COLORS[a] }} />
+                              <span className="font-semibold" style={{ color: MODEL_COLORS[a] }}>{AGENT_LABELS[a]}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <div className="text-xs text-muted-foreground">Weighted Mean</div>
+                                <div className="font-mono font-bold">{fmtPct(bac.weighted_mean_asr)}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">Attempt-Weighted</div>
+                                <div className="font-mono font-bold">{fmtPct(bac.attempt_weighted_asr)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Per-technique table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Per-Technique Breakdown</CardTitle>
+                    <CardDescription>Attack attempts, successes, ASR, and attempt share per technique (sorted by volume)</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Technique</TableHead>
+                          <TableHead>Attempts</TableHead>
+                          <TableHead>Successes</TableHead>
+                          <TableHead>ASR</TableHead>
+                          <TableHead>Share</TableHead>
+                          {AGENTS.map((a) => (
+                            <TableHead key={a}>
+                              <span className="inline-flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MODEL_COLORS[a] }} />
+                                {AGENT_LABELS[a]}
+                              </span>
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {Object.entries(data.bias_asr_correlation.per_technique)
+                          .sort(([, a], [, b]) => b.total_attempts - a.total_attempts)
+                          .map(([tech, info]) => (
+                            <TableRow key={tech}>
+                              <TableCell className="font-medium text-xs">{tech}</TableCell>
+                              <TableCell className="font-mono text-sm">{fmtInt(info.total_attempts)}</TableCell>
+                              <TableCell className="font-mono text-sm">{fmtInt(info.total_successes)}</TableCell>
+                              <TableCell className="font-mono text-sm">{fmtPct(info.asr)}</TableCell>
+                              <TableCell className="font-mono text-sm">{fmtPct(info.attempt_share)}</TableCell>
+                              {AGENTS.map((a) => (
+                                <TableCell key={a} className="font-mono text-sm text-muted-foreground">
+                                  {fmtInt(info.per_agent_attempts?.[a] ?? 0)}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            </InView>
+          </section>
+        )}
+
         {/* -- Section E: Technique Bias ─────────────────────────────────────── */}
         {data != null && (
           <section id="technique-bias" className="space-y-5">
@@ -2328,6 +2499,155 @@ export default function HomePage() {
             </div>
             <InView>
               <CrossTargetContent data={data} />
+            </InView>
+          </section>
+        )}
+
+        {/* -- Section I: Guided vs Unguided ─────────────────────────────────── */}
+        {data != null && data.guided_vs_unguided && (
+          <section id="guided-vs-unguided" className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold text-foreground">Guided vs Unguided</h2>
+              <p className="text-muted-foreground text-sm">
+                Comparing agent behavior under guided (structured prompt) vs unguided (free-form) conditions.
+              </p>
+            </div>
+            <InView>
+              <div className="space-y-6">
+                {/* Summary stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className="font-mono text-2xl font-bold text-foreground">
+                      {fmtPct(data.guided_vs_unguided.summary.guided_mean_asr)}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Guided Mean ASR</span>
+                  </div>
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className="font-mono text-2xl font-bold text-foreground">
+                      {fmtPct(data.guided_vs_unguided.summary.unguided_mean_asr)}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Unguided Mean ASR</span>
+                  </div>
+                  <div className="glow-cyber flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-5 py-4">
+                    <span className={`font-mono text-2xl font-bold ${data.guided_vs_unguided.summary.overall_delta_asr < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                      {data.guided_vs_unguided.summary.overall_delta_asr >= 0 ? "+" : ""}{fmtPct(data.guided_vs_unguided.summary.overall_delta_asr)}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-widest">Overall Delta ASR</span>
+                  </div>
+                </div>
+
+                {/* Grouped bar chart: Guided vs Unguided ASR per agent */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>ASR: Guided vs Unguided</CardTitle>
+                    <CardDescription>Attack success rate comparison between guided and unguided conditions per agent</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart
+                        data={AGENTS.filter((a) => data.guided_vs_unguided.by_agent[a]).map((a) => ({
+                          name: AGENT_LABELS[a],
+                          Guided: data.guided_vs_unguided.by_agent[a].guided.asr,
+                          Unguided: data.guided_vs_unguided.by_agent[a].unguided.asr,
+                        }))}
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke={DARK_GRID} />
+                        <XAxis dataKey="name" tick={DARK_TICK} />
+                        <YAxis tickFormatter={pctFormatter0} tick={DARK_TICK} domain={[0, "auto"]} />
+                        <RTooltip formatter={pctFormatter} contentStyle={DARK_TOOLTIP} />
+                        <Legend />
+                        <Bar dataKey="Guided" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Unguided" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Delta cards per agent */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {AGENTS.filter((a) => data.guided_vs_unguided.by_agent[a]).map((a) => {
+                    const agentData = data.guided_vs_unguided.by_agent[a];
+                    return (
+                      <Card key={a} style={{ borderLeftColor: MODEL_COLORS[a], borderLeftWidth: "3px" }}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base" style={{ color: MODEL_COLORS[a] }}>
+                            {AGENT_LABELS[a]}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Guided ASR</div>
+                              <div className="font-mono font-bold text-sm">{fmtPct(agentData.guided.asr)}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Unguided ASR</div>
+                              <div className="font-mono font-bold text-sm">{fmtPct(agentData.unguided.asr)}</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border">
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Delta ASR</div>
+                              <div className={`font-mono text-sm font-bold ${agentData.delta_asr < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                {agentData.delta_asr >= 0 ? "+" : ""}{fmtPct(agentData.delta_asr)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Delta H</div>
+                              <div className={`font-mono text-sm font-bold ${agentData.delta_entropy > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                {agentData.delta_entropy >= 0 ? "+" : ""}{fmt(agentData.delta_entropy, 3)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">JSD Shift</div>
+                              <div className="font-mono text-sm font-bold text-foreground">
+                                {fmt(agentData.technique_shift_jsd, 4)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border text-xs text-muted-foreground">
+                            <div>
+                              <span className="block">Guided: {agentData.guided.attack_requests} attacks, H={fmt(agentData.guided.entropy, 2)}</span>
+                            </div>
+                            <div>
+                              <span className="block">Unguided: {agentData.unguided.attack_requests} attacks, H={fmt(agentData.unguided.entropy, 2)}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+
+                {/* Entropy comparison bar chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Entropy: Guided vs Unguided</CardTitle>
+                    <CardDescription>Shannon entropy comparison — higher entropy indicates more diverse technique usage</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart
+                        data={AGENTS.filter((a) => data.guided_vs_unguided.by_agent[a]).map((a) => ({
+                          name: AGENT_LABELS[a],
+                          Guided: data.guided_vs_unguided.by_agent[a].guided.entropy,
+                          Unguided: data.guided_vs_unguided.by_agent[a].unguided.entropy,
+                        }))}
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke={DARK_GRID} />
+                        <XAxis dataKey="name" tick={DARK_TICK} />
+                        <YAxis tick={DARK_TICK} />
+                        <RTooltip formatter={numFormatter2} contentStyle={DARK_TOOLTIP} />
+                        <Legend />
+                        <Bar dataKey="Guided" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Unguided" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
             </InView>
           </section>
         )}
